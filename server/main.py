@@ -7,35 +7,31 @@ Designed for MCP integration with AI agents
 import os
 import re
 import sqlite3
+import secrets
+import uuid
 from datetime import datetime
 from typing import Optional, List, Any, Dict
 from contextlib import contextmanager
 from pathlib import Path
+from io import BytesIO
 
-from fastapi import FastAPI, HTTPException, Query, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Query, Request, UploadFile, File, Form, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import boto3
 from botocore.config import Config
 
-app = FastAPI(
-    title="Personal-OS Memory API",
-    description="Universal AI Memory System - MCP Compatible",
-    version="2.0.0"
-)
+# ============== CONFIGURATION ==============
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# API Key for authentication (set via environment variable)
+API_KEY = os.environ.get("API_KEY", "")
 
 # Database path - uses persistent volume on Fly.io
 DB_PATH = os.environ.get("DB_PATH", "/data/memory.db")
+
+# Owner info (configurable)
+OWNER_NAME = os.environ.get("OWNER_NAME", "")
 
 # S3/Tigris configuration for file storage
 S3_ENDPOINT = os.environ.get("AWS_ENDPOINT_URL_S3", "https://fly.storage.tigris.dev")
@@ -43,6 +39,46 @@ S3_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY_ID", "")
 S3_SECRET_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
 S3_BUCKET = os.environ.get("BUCKET_NAME", "personal-os-files")
 S3_REGION = os.environ.get("AWS_REGION", "auto")
+
+# File upload limits
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+
+# Blocked SQL patterns (destructive DDL)
+BLOCKED_SQL_PATTERNS = [
+    r'\bDROP\s+TABLE\b',
+    r'\bDROP\s+DATABASE\b',
+    r'\bTRUNCATE\b',
+    r'\bALTER\s+TABLE\s+\w+\s+DROP\b',
+]
+
+app = FastAPI(
+    title="Personal-OS Memory API",
+    description="Universal AI Memory System - MCP Compatible",
+    version="2.1.0"
+)
+
+# CORS - Allow dashboard and common local dev origins
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ============== AUTHENTICATION ==============
+
+def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
+    """Verify API key if one is configured"""
+    if not API_KEY:
+        # No API key configured - allow all requests (for local dev)
+        return True
+    if not x_api_key or not secrets.compare_digest(x_api_key, API_KEY):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return True
+
+# ============== HELPERS ==============
 
 def get_s3_client():
     """Get S3 client for Tigris"""
@@ -69,54 +105,80 @@ def get_db():
 def dict_from_row(row):
     return dict(row) if row else None
 
+def is_sql_destructive(sql: str) -> bool:
+    """Check if SQL contains destructive DDL patterns"""
+    sql_upper = sql.upper()
+    for pattern in BLOCKED_SQL_PATTERNS:
+        if re.search(pattern, sql_upper, re.IGNORECASE):
+            return True
+    return False
+
 # ============== MODELS ==============
 
 class Person(BaseModel):
-    name: str
-    relationship: Optional[str] = None
-    organization: Optional[str] = None
-    role: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    linkedin: Optional[str] = None
-    twitter: Optional[str] = None
-    website: Optional[str] = None
-    location: Optional[str] = None
-    how_we_met: Optional[str] = None
-    notes: Optional[str] = None
-    tags: Optional[str] = None
-    importance: Optional[int] = 3
+    name: str = Field(..., max_length=500)
+    relationship: Optional[str] = Field(None, max_length=200)
+    organization: Optional[str] = Field(None, max_length=500)
+    role: Optional[str] = Field(None, max_length=200)
+    email: Optional[str] = Field(None, max_length=500)
+    phone: Optional[str] = Field(None, max_length=50)
+    linkedin: Optional[str] = Field(None, max_length=500)
+    twitter: Optional[str] = Field(None, max_length=200)
+    website: Optional[str] = Field(None, max_length=500)
+    location: Optional[str] = Field(None, max_length=200)
+    how_we_met: Optional[str] = Field(None, max_length=2000)
+    notes: Optional[str] = Field(None, max_length=50000)
+    tags: Optional[str] = Field(None, max_length=1000)
+    importance: Optional[int] = Field(3, ge=1, le=5)
 
 class Project(BaseModel):
-    name: str
-    description: Optional[str] = None
-    status: Optional[str] = "active"
-    category: Optional[str] = None
-    tech_stack: Optional[str] = None
-    github_url: Optional[str] = None
-    website_url: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    notes: Optional[str] = None
-    tags: Optional[str] = None
+    name: str = Field(..., max_length=500)
+    description: Optional[str] = Field(None, max_length=50000)
+    status: Optional[str] = Field("active", max_length=50)
+    category: Optional[str] = Field(None, max_length=200)
+    tech_stack: Optional[str] = Field(None, max_length=1000)
+    github_url: Optional[str] = Field(None, max_length=500)
+    website_url: Optional[str] = Field(None, max_length=500)
+    start_date: Optional[str] = Field(None, max_length=20)
+    end_date: Optional[str] = Field(None, max_length=20)
+    notes: Optional[str] = Field(None, max_length=50000)
+    tags: Optional[str] = Field(None, max_length=1000)
 
 class Interaction(BaseModel):
     person_id: int
-    type: str
-    date: str
-    summary: str
-    notes: Optional[str] = None
-    follow_up: Optional[str] = None
+    type: str = Field(..., max_length=100)
+    date: str = Field(..., max_length=20)
+    summary: str = Field(..., max_length=5000)
+    notes: Optional[str] = Field(None, max_length=50000)
+    follow_up: Optional[str] = Field(None, max_length=2000)
 
 class Note(BaseModel):
-    title: Optional[str] = None
-    content: str
-    category: Optional[str] = None
-    tags: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=500)
+    content: str = Field(..., max_length=100000)
+    category: Optional[str] = Field(None, max_length=200)
+    tags: Optional[str] = Field(None, max_length=1000)
     related_person_id: Optional[int] = None
     related_project_id: Optional[int] = None
 
-# ============== STATIC FILES & DASHBOARD ==============
+class TableSchema(BaseModel):
+    table_name: str = Field(..., max_length=100)
+    columns: Dict[str, str]
+
+class RecordData(BaseModel):
+    data: Dict[str, Any]
+
+class SeedData(BaseModel):
+    identity: Optional[List[dict]] = None
+    skills: Optional[List[dict]] = None
+    education: Optional[List[dict]] = None
+    work_experience: Optional[List[dict]] = None
+    projects: Optional[List[dict]] = None
+
+class SQLRequest(BaseModel):
+    sql: str = Field(..., max_length=10000)
+    params: Optional[List[Any]] = None
+
+# ============== PUBLIC ENDPOINTS (No Auth) ==============
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -133,26 +195,9 @@ def dashboard():
     """Serve the dashboard"""
     return root()
 
-@app.get("/api")
-def api_info():
-    """API information for AI agents"""
-    return {
-        "service": "Personal-OS Memory API",
-        "version": "2.0.0",
-        "owner": "Rohit Challa",
-        "mcp_compatible": True,
-        "capabilities": [
-            "identity_management",
-            "people_crm",
-            "project_tracking",
-            "dynamic_tables",
-            "full_text_search",
-            "raw_sql_queries"
-        ]
-    }
-
 @app.get("/health")
 def health():
+    """Health check - no auth required"""
     try:
         with get_db() as conn:
             conn.execute("SELECT 1")
@@ -160,30 +205,51 @@ def health():
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
 
-# ============== IDENTITY ==============
+@app.get("/api")
+def api_info():
+    """API information for AI agents"""
+    return {
+        "service": "Personal-OS Memory API",
+        "version": "2.1.0",
+        "owner": OWNER_NAME if OWNER_NAME else "(not configured)",
+        "mcp_compatible": True,
+        "auth_required": bool(API_KEY),
+        "capabilities": [
+            "identity_management",
+            "people_crm",
+            "project_tracking",
+            "dynamic_tables",
+            "full_text_search",
+            "sql_queries",
+            "file_storage"
+        ]
+    }
+
+# ============== IDENTITY (Auth Required) ==============
 
 @app.get("/identity")
-def get_identity():
+def get_identity(_: bool = Depends(verify_api_key)):
     with get_db() as conn:
         rows = conn.execute("SELECT key, value, category FROM identity").fetchall()
         return {"identity": [dict_from_row(r) for r in rows]}
 
 @app.get("/identity/{key}")
-def get_identity_key(key: str):
+def get_identity_key(key: str, _: bool = Depends(verify_api_key)):
     with get_db() as conn:
         row = conn.execute("SELECT value FROM identity WHERE key = ?", (key,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Key not found")
         return {"key": key, "value": row["value"]}
 
-# ============== PEOPLE ==============
+# ============== PEOPLE (Auth Required) ==============
 
 @app.get("/people")
 def list_people(
     relationship: Optional[str] = None,
     organization: Optional[str] = None,
     tag: Optional[str] = None,
-    limit: int = Query(default=100, le=500)
+    limit: int = Query(default=100, le=500),
+    _: bool = Depends(verify_api_key)
 ):
     with get_db() as conn:
         query = "SELECT * FROM people WHERE 1=1"
@@ -206,7 +272,7 @@ def list_people(
         return {"people": [dict_from_row(r) for r in rows], "count": len(rows)}
 
 @app.get("/people/{person_id}")
-def get_person(person_id: int):
+def get_person(person_id: int, _: bool = Depends(verify_api_key)):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM people WHERE id = ?", (person_id,)).fetchone()
         if not row:
@@ -214,7 +280,7 @@ def get_person(person_id: int):
         return dict_from_row(row)
 
 @app.post("/people")
-def create_person(person: Person):
+def create_person(person: Person, _: bool = Depends(verify_api_key)):
     with get_db() as conn:
         cursor = conn.execute("""
             INSERT INTO people (name, relationship, organization, role, email, phone,
@@ -227,7 +293,7 @@ def create_person(person: Person):
         return {"id": cursor.lastrowid, "message": "Person created"}
 
 @app.put("/people/{person_id}")
-def update_person(person_id: int, person: Person):
+def update_person(person_id: int, person: Person, _: bool = Depends(verify_api_key)):
     with get_db() as conn:
         conn.execute("""
             UPDATE people SET name=?, relationship=?, organization=?, role=?, email=?,
@@ -241,13 +307,14 @@ def update_person(person_id: int, person: Person):
         conn.commit()
         return {"id": person_id, "message": "Person updated"}
 
-# ============== PROJECTS ==============
+# ============== PROJECTS (Auth Required) ==============
 
 @app.get("/projects")
 def list_projects(
     status: Optional[str] = None,
     category: Optional[str] = None,
-    limit: int = Query(default=100, le=500)
+    limit: int = Query(default=100, le=500),
+    _: bool = Depends(verify_api_key)
 ):
     with get_db() as conn:
         query = "SELECT * FROM projects WHERE 1=1"
@@ -267,7 +334,7 @@ def list_projects(
         return {"projects": [dict_from_row(r) for r in rows], "count": len(rows)}
 
 @app.post("/projects")
-def create_project(project: Project):
+def create_project(project: Project, _: bool = Depends(verify_api_key)):
     with get_db() as conn:
         cursor = conn.execute("""
             INSERT INTO projects (name, description, status, category, tech_stack,
@@ -279,13 +346,14 @@ def create_project(project: Project):
         conn.commit()
         return {"id": cursor.lastrowid, "message": "Project created"}
 
-# ============== INTERACTIONS ==============
+# ============== INTERACTIONS (Auth Required) ==============
 
 @app.get("/interactions")
 def list_interactions(
     person_id: Optional[int] = None,
     type: Optional[str] = None,
-    limit: int = Query(default=50, le=200)
+    limit: int = Query(default=50, le=200),
+    _: bool = Depends(verify_api_key)
 ):
     with get_db() as conn:
         query = """
@@ -310,7 +378,7 @@ def list_interactions(
         return {"interactions": [dict_from_row(r) for r in rows], "count": len(rows)}
 
 @app.post("/interactions")
-def create_interaction(interaction: Interaction):
+def create_interaction(interaction: Interaction, _: bool = Depends(verify_api_key)):
     with get_db() as conn:
         cursor = conn.execute("""
             INSERT INTO interactions (person_id, type, date, summary, notes, follow_up)
@@ -319,20 +387,20 @@ def create_interaction(interaction: Interaction):
               interaction.summary, interaction.notes, interaction.follow_up))
         conn.commit()
 
-        # Update last_contact for the person
         conn.execute("UPDATE people SET last_contact = ? WHERE id = ?",
                     (interaction.date, interaction.person_id))
         conn.commit()
 
         return {"id": cursor.lastrowid, "message": "Interaction logged"}
 
-# ============== NOTES ==============
+# ============== NOTES (Auth Required) ==============
 
 @app.get("/notes")
 def list_notes(
     category: Optional[str] = None,
     tag: Optional[str] = None,
-    limit: int = Query(default=50, le=200)
+    limit: int = Query(default=50, le=200),
+    _: bool = Depends(verify_api_key)
 ):
     with get_db() as conn:
         query = "SELECT * FROM notes WHERE 1=1"
@@ -352,7 +420,7 @@ def list_notes(
         return {"notes": [dict_from_row(r) for r in rows], "count": len(rows)}
 
 @app.post("/notes")
-def create_note(note: Note):
+def create_note(note: Note, _: bool = Depends(verify_api_key)):
     with get_db() as conn:
         cursor = conn.execute("""
             INSERT INTO notes (title, content, category, tags, related_person_id, related_project_id)
@@ -362,15 +430,14 @@ def create_note(note: Note):
         conn.commit()
         return {"id": cursor.lastrowid, "message": "Note created"}
 
-# ============== SEARCH ==============
+# ============== SEARCH (Auth Required) ==============
 
 @app.get("/search")
-def search(q: str, limit: int = Query(default=20, le=100)):
+def search(q: str, limit: int = Query(default=20, le=100), _: bool = Depends(verify_api_key)):
     """Search across people, projects, and notes"""
     results = {"people": [], "projects": [], "notes": []}
 
     with get_db() as conn:
-        # Search people
         people = conn.execute("""
             SELECT id, name, relationship, organization, 'person' as type
             FROM people
@@ -379,7 +446,6 @@ def search(q: str, limit: int = Query(default=20, le=100)):
         """, (f"%{q}%", f"%{q}%", f"%{q}%", limit)).fetchall()
         results["people"] = [dict_from_row(r) for r in people]
 
-        # Search projects
         projects = conn.execute("""
             SELECT id, name, status, category, 'project' as type
             FROM projects
@@ -388,7 +454,6 @@ def search(q: str, limit: int = Query(default=20, le=100)):
         """, (f"%{q}%", f"%{q}%", f"%{q}%", limit)).fetchall()
         results["projects"] = [dict_from_row(r) for r in projects]
 
-        # Search notes
         notes = conn.execute("""
             SELECT id, title, category, 'note' as type
             FROM notes
@@ -399,31 +464,31 @@ def search(q: str, limit: int = Query(default=20, le=100)):
 
     return results
 
-# ============== SKILLS & EDUCATION ==============
+# ============== SKILLS & EDUCATION (Auth Required) ==============
 
 @app.get("/skills")
-def list_skills():
+def list_skills(_: bool = Depends(verify_api_key)):
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM skills ORDER BY category, proficiency DESC").fetchall()
         return {"skills": [dict_from_row(r) for r in rows]}
 
 @app.get("/education")
-def list_education():
+def list_education(_: bool = Depends(verify_api_key)):
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM education ORDER BY end_year DESC").fetchall()
         return {"education": [dict_from_row(r) for r in rows]}
 
 @app.get("/work")
-def list_work():
+def list_work(_: bool = Depends(verify_api_key)):
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM work_experience ORDER BY start_date DESC").fetchall()
         return {"work_experience": [dict_from_row(r) for r in rows]}
 
-# ============== RAW QUERY (for Claude) ==============
+# ============== RAW QUERY (Auth Required) ==============
 
 @app.post("/query")
-def raw_query(sql: str):
-    """Execute read-only SQL query (for Claude's use)"""
+def raw_query(sql: str, _: bool = Depends(verify_api_key)):
+    """Execute read-only SQL query"""
     if not sql.strip().upper().startswith("SELECT"):
         raise HTTPException(status_code=400, detail="Only SELECT queries allowed")
 
@@ -434,22 +499,14 @@ def raw_query(sql: str):
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-# ============== SEED/IMPORT ENDPOINTS ==============
-
-class SeedData(BaseModel):
-    identity: Optional[List[dict]] = None
-    skills: Optional[List[dict]] = None
-    education: Optional[List[dict]] = None
-    work_experience: Optional[List[dict]] = None
-    projects: Optional[List[dict]] = None
+# ============== SEED/IMPORT (Auth Required) ==============
 
 @app.post("/seed")
-def seed_database(data: SeedData):
+def seed_database(data: SeedData, _: bool = Depends(verify_api_key)):
     """Bulk import data into the database"""
     results = {}
 
     with get_db() as conn:
-        # Seed identity
         if data.identity:
             for item in data.identity:
                 conn.execute(
@@ -458,7 +515,6 @@ def seed_database(data: SeedData):
                 )
             results["identity"] = len(data.identity)
 
-        # Seed skills
         if data.skills:
             for item in data.skills:
                 conn.execute(
@@ -467,7 +523,6 @@ def seed_database(data: SeedData):
                 )
             results["skills"] = len(data.skills)
 
-        # Seed education
         if data.education:
             for item in data.education:
                 conn.execute(
@@ -478,7 +533,6 @@ def seed_database(data: SeedData):
                 )
             results["education"] = len(data.education)
 
-        # Seed work experience
         if data.work_experience:
             for item in data.work_experience:
                 conn.execute(
@@ -490,7 +544,6 @@ def seed_database(data: SeedData):
                 )
             results["work_experience"] = len(data.work_experience)
 
-        # Seed projects
         if data.projects:
             for item in data.projects:
                 conn.execute(
@@ -506,21 +559,14 @@ def seed_database(data: SeedData):
 
     return {"message": "Data seeded successfully", "counts": results}
 
-# ============== DYNAMIC TABLE MANAGEMENT (FOR AI AGENTS) ==============
-
-class TableSchema(BaseModel):
-    table_name: str
-    columns: Dict[str, str]  # column_name: type (TEXT, INTEGER, REAL, BLOB)
-
-class RecordData(BaseModel):
-    data: Dict[str, Any]
+# ============== DYNAMIC TABLES (Auth Required) ==============
 
 def sanitize_name(name: str) -> str:
     """Sanitize table/column names to prevent SQL injection"""
     return re.sub(r'[^a-zA-Z0-9_]', '', name)
 
 @app.get("/tables")
-def list_tables():
+def list_tables(_: bool = Depends(verify_api_key)):
     """List all tables in the database"""
     with get_db() as conn:
         tables = conn.execute(
@@ -530,7 +576,6 @@ def list_tables():
         result = []
         for table in tables:
             table_name = table['name']
-            # Get column info
             columns = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
             count = conn.execute(f"SELECT COUNT(*) as c FROM {table_name}").fetchone()
 
@@ -543,14 +588,13 @@ def list_tables():
         return {"tables": result}
 
 @app.post("/tables")
-def create_table(schema: TableSchema):
-    """Create a new table dynamically (for AI agents to store new data types)"""
+def create_table(schema: TableSchema, _: bool = Depends(verify_api_key)):
+    """Create a new table dynamically (for AI agents)"""
     table_name = sanitize_name(schema.table_name)
 
     if not table_name:
         raise HTTPException(status_code=400, detail="Invalid table name")
 
-    # Build column definitions
     col_defs = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
     for col_name, col_type in schema.columns.items():
         safe_col = sanitize_name(col_name)
@@ -574,13 +618,13 @@ def create_table(schema: TableSchema):
 def get_table_records(
     table_name: str,
     limit: int = Query(default=100, le=1000),
-    offset: int = Query(default=0, ge=0)
+    offset: int = Query(default=0, ge=0),
+    _: bool = Depends(verify_api_key)
 ):
     """Get records from any table"""
     safe_table = sanitize_name(table_name)
 
     with get_db() as conn:
-        # Check table exists
         exists = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
             (safe_table,)
@@ -604,12 +648,11 @@ def get_table_records(
         }
 
 @app.post("/tables/{table_name}")
-def insert_record(table_name: str, record: RecordData):
+def insert_record(table_name: str, record: RecordData, _: bool = Depends(verify_api_key)):
     """Insert a record into any table"""
     safe_table = sanitize_name(table_name)
 
     with get_db() as conn:
-        # Check table exists
         exists = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
             (safe_table,)
@@ -618,11 +661,9 @@ def insert_record(table_name: str, record: RecordData):
         if not exists:
             raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
 
-        # Get valid columns
         columns_info = conn.execute(f"PRAGMA table_info({safe_table})").fetchall()
         valid_columns = {c['name'] for c in columns_info}
 
-        # Filter to valid columns only
         data = {sanitize_name(k): v for k, v in record.data.items() if sanitize_name(k) in valid_columns}
 
         if not data:
@@ -643,16 +684,14 @@ def insert_record(table_name: str, record: RecordData):
             raise HTTPException(status_code=400, detail=str(e))
 
 @app.put("/tables/{table_name}/{record_id}")
-def update_record(table_name: str, record_id: int, record: RecordData):
+def update_record(table_name: str, record_id: int, record: RecordData, _: bool = Depends(verify_api_key)):
     """Update a record in any table"""
     safe_table = sanitize_name(table_name)
 
     with get_db() as conn:
-        # Get valid columns
         columns_info = conn.execute(f"PRAGMA table_info({safe_table})").fetchall()
         valid_columns = {c['name'] for c in columns_info}
 
-        # Filter to valid columns only
         data = {sanitize_name(k): v for k, v in record.data.items() if sanitize_name(k) in valid_columns}
         data['updated_at'] = datetime.now().isoformat()
 
@@ -670,7 +709,7 @@ def update_record(table_name: str, record_id: int, record: RecordData):
             raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/tables/{table_name}/{record_id}")
-def delete_record(table_name: str, record_id: int):
+def delete_record(table_name: str, record_id: int, _: bool = Depends(verify_api_key)):
     """Delete a record from any table"""
     safe_table = sanitize_name(table_name)
 
@@ -682,19 +721,21 @@ def delete_record(table_name: str, record_id: int):
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-# ============== EXECUTE SQL (FOR AI AGENTS) ==============
-
-class SQLRequest(BaseModel):
-    sql: str
-    params: Optional[List[Any]] = None
+# ============== EXECUTE SQL (Auth Required, with safeguards) ==============
 
 @app.post("/execute")
-def execute_sql(request: SQLRequest):
-    """Execute any SQL (for AI agents) - USE WITH CAUTION"""
+def execute_sql(request: SQLRequest, _: bool = Depends(verify_api_key)):
+    """Execute SQL - blocks destructive DDL (DROP TABLE, TRUNCATE, etc.)"""
     sql = request.sql.strip()
     params = request.params or []
 
-    # Determine if it's a read or write operation
+    # Block destructive DDL
+    if is_sql_destructive(sql):
+        raise HTTPException(
+            status_code=403,
+            detail="Destructive DDL operations (DROP TABLE, TRUNCATE, ALTER TABLE DROP) are blocked. Use the web dashboard for schema changes."
+        )
+
     is_read = sql.upper().startswith(('SELECT', 'PRAGMA'))
 
     with get_db() as conn:
@@ -713,12 +754,7 @@ def execute_sql(request: SQLRequest):
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-# ============== MCP DISCOVERY ENDPOINT ==============
-
-# ============== FILE STORAGE (S3/TIGRIS) ==============
-
-import uuid
-from io import BytesIO
+# ============== FILE STORAGE (Auth Required) ==============
 
 @app.get("/files")
 def list_files(
@@ -726,9 +762,10 @@ def list_files(
     tag: Optional[str] = None,
     person_id: Optional[int] = None,
     project_id: Optional[int] = None,
-    limit: int = Query(default=50, le=200)
+    limit: int = Query(default=50, le=200),
+    _: bool = Depends(verify_api_key)
 ):
-    """List uploaded files with optional filters"""
+    """List uploaded files"""
     with get_db() as conn:
         query = "SELECT * FROM files WHERE 1=1"
         params = []
@@ -753,8 +790,8 @@ def list_files(
         return {"files": [dict_from_row(r) for r in rows], "count": len(rows)}
 
 @app.get("/files/{file_id}")
-def get_file_info(file_id: int):
-    """Get file metadata by ID"""
+def get_file_info(file_id: int, _: bool = Depends(verify_api_key)):
+    """Get file metadata"""
     with get_db() as conn:
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
         if not row:
@@ -768,23 +805,25 @@ async def upload_file(
     tags: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     related_person_id: Optional[int] = Form(None),
-    related_project_id: Optional[int] = Form(None)
+    related_project_id: Optional[int] = Form(None),
+    _: bool = Depends(verify_api_key)
 ):
-    """Upload a file to S3/Tigris storage"""
+    """Upload a file (max 50MB)"""
     s3 = get_s3_client()
     if not s3:
         raise HTTPException(status_code=503, detail="File storage not configured")
 
-    # Generate unique filename
+    # Read with size limit
+    content = await file.read()
+    file_size = len(content)
+
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB")
+
     ext = Path(file.filename).suffix if file.filename else ""
     unique_filename = f"{uuid.uuid4().hex}{ext}"
     s3_key = f"files/{unique_filename}"
 
-    # Read file content
-    content = await file.read()
-    file_size = len(content)
-
-    # Upload to S3
     try:
         s3.upload_fileobj(
             BytesIO(content),
@@ -795,7 +834,6 @@ async def upload_file(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
-    # Save metadata to database
     with get_db() as conn:
         cursor = conn.execute("""
             INSERT INTO files (filename, original_filename, content_type, size_bytes, s3_key,
@@ -815,8 +853,8 @@ async def upload_file(
     }
 
 @app.get("/files/{file_id}/download")
-def download_file(file_id: int):
-    """Get a presigned URL to download a file"""
+def download_file(file_id: int, _: bool = Depends(verify_api_key)):
+    """Get presigned download URL"""
     s3 = get_s3_client()
     if not s3:
         raise HTTPException(status_code=503, detail="File storage not configured")
@@ -825,10 +863,8 @@ def download_file(file_id: int):
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="File not found")
-
         file_data = dict_from_row(row)
 
-    # Generate presigned URL (valid for 1 hour)
     try:
         url = s3.generate_presigned_url(
             'get_object',
@@ -845,8 +881,8 @@ def download_file(file_id: int):
         raise HTTPException(status_code=500, detail=f"Failed to generate download URL: {str(e)}")
 
 @app.delete("/files/{file_id}")
-def delete_file(file_id: int):
-    """Delete a file from storage and database"""
+def delete_file(file_id: int, _: bool = Depends(verify_api_key)):
+    """Delete a file"""
     s3 = get_s3_client()
     if not s3:
         raise HTTPException(status_code=503, detail="File storage not configured")
@@ -855,105 +891,36 @@ def delete_file(file_id: int):
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="File not found")
-
         file_data = dict_from_row(row)
 
-        # Delete from S3
         try:
             s3.delete_object(Bucket=S3_BUCKET, Key=file_data['s3_key'])
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to delete from storage: {str(e)}")
 
-        # Delete from database
         conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
         conn.commit()
 
     return {"message": f"File '{file_data['original_filename']}' deleted successfully"}
 
-# ============== MCP DISCOVERY ENDPOINT ==============
+# ============== MCP DISCOVERY ==============
 
 @app.get("/mcp/tools")
 def mcp_tools():
-    """MCP-compatible tool discovery endpoint"""
+    """MCP-compatible tool discovery"""
     return {
         "tools": [
-            {
-                "name": "memory_search",
-                "description": "Search across all memory (people, projects, notes)",
-                "endpoint": "/search",
-                "method": "GET",
-                "parameters": {"q": "string", "limit": "integer"}
-            },
-            {
-                "name": "memory_query",
-                "description": "Execute SQL query on memory database",
-                "endpoint": "/execute",
-                "method": "POST",
-                "parameters": {"sql": "string", "params": "array"}
-            },
-            {
-                "name": "memory_create_table",
-                "description": "Create a new table to store a new type of data",
-                "endpoint": "/tables",
-                "method": "POST",
-                "parameters": {"table_name": "string", "columns": "object"}
-            },
-            {
-                "name": "memory_insert",
-                "description": "Insert a record into any table",
-                "endpoint": "/tables/{table_name}",
-                "method": "POST",
-                "parameters": {"data": "object"}
-            },
-            {
-                "name": "memory_list_tables",
-                "description": "List all tables and their schemas",
-                "endpoint": "/tables",
-                "method": "GET"
-            },
-            {
-                "name": "memory_get_identity",
-                "description": "Get owner identity information",
-                "endpoint": "/identity",
-                "method": "GET"
-            },
-            {
-                "name": "memory_get_people",
-                "description": "List people in the network",
-                "endpoint": "/people",
-                "method": "GET"
-            },
-            {
-                "name": "memory_add_person",
-                "description": "Add a person to the network",
-                "endpoint": "/people",
-                "method": "POST"
-            },
-            {
-                "name": "memory_upload_file",
-                "description": "Upload a file to storage",
-                "endpoint": "/files",
-                "method": "POST",
-                "parameters": {"file": "binary", "category": "string", "tags": "string", "description": "string"}
-            },
-            {
-                "name": "memory_list_files",
-                "description": "List uploaded files",
-                "endpoint": "/files",
-                "method": "GET",
-                "parameters": {"category": "string", "tag": "string", "limit": "integer"}
-            },
-            {
-                "name": "memory_download_file",
-                "description": "Get download URL for a file",
-                "endpoint": "/files/{file_id}/download",
-                "method": "GET"
-            },
-            {
-                "name": "memory_delete_file",
-                "description": "Delete a file from storage",
-                "endpoint": "/files/{file_id}",
-                "method": "DELETE"
-            }
-        ]
+            {"name": "memory_search", "description": "Search across all memory", "endpoint": "/search", "method": "GET"},
+            {"name": "memory_query", "description": "Execute SQL query", "endpoint": "/execute", "method": "POST"},
+            {"name": "memory_create_table", "description": "Create a new table", "endpoint": "/tables", "method": "POST"},
+            {"name": "memory_insert", "description": "Insert a record", "endpoint": "/tables/{table_name}", "method": "POST"},
+            {"name": "memory_list_tables", "description": "List all tables", "endpoint": "/tables", "method": "GET"},
+            {"name": "memory_get_identity", "description": "Get owner identity", "endpoint": "/identity", "method": "GET"},
+            {"name": "memory_get_people", "description": "List people", "endpoint": "/people", "method": "GET"},
+            {"name": "memory_add_person", "description": "Add a person", "endpoint": "/people", "method": "POST"},
+            {"name": "memory_upload_file", "description": "Upload a file", "endpoint": "/files", "method": "POST"},
+            {"name": "memory_list_files", "description": "List files", "endpoint": "/files", "method": "GET"},
+            {"name": "memory_download_file", "description": "Get download URL", "endpoint": "/files/{file_id}/download", "method": "GET"},
+        ],
+        "auth": "X-API-Key header required" if API_KEY else "No auth configured"
     }
