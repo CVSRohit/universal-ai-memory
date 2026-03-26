@@ -1,0 +1,29 @@
+# Personal data - DO NOT COMMIT
+memory.db
+about_RC.md
+projects_RC.md
+sync_to_cloud.py
+mcp-config.json
+
+# System files
+.DS_Store
+.claude/
+*.pyc
+__pycache__/
+.env
+*.log
+
+# Fly.io config (contains app name)
+server/fly.toml
+
+# IDE
+.vscode/
+.idea/
+
+# Personal folders (templates only should be committed)
+00_About_Me/
+01_People/
+02_Projects/
+03_Notes/
+04_Goals/
+05_Interactions/

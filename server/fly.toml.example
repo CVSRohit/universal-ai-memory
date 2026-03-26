@@ -1,0 +1,27 @@
+# Fly.io configuration template
+# Copy to fly.toml and customize
+
+app = 'your-app-name'
+primary_region = 'yyz'  # Change to your preferred region
+
+[build]
+
+[env]
+  DB_PATH = '/data/memory.db'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[mounts]
+  source = 'memory_data'
+  destination = '/data'
+
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1

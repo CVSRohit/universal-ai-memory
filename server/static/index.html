@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal-OS | Rohit Challa</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #141414;
+            --bg-card: #1a1a1a;
+            --border: #2a2a2a;
+            --text-primary: #ffffff;
+            --text-secondary: #888888;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #22c55e;
+            --warning: #f59e0b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 2rem;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .hero {
+            padding: 3rem 0;
+            text-align: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .hero p {
+            color: var(--text-secondary);
+            font-size: 1.125rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            padding: 1.5rem 0;
+            border-bottom: 1px solid var(--border);
+            overflow-x: auto;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .tab:hover {
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+
+        .tab.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .tab-count {
+            background: rgba(255,255,255,0.2);
+            padding: 0.125rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-left: 0.5rem;
+        }
+
+        .content {
+            padding: 2rem 0;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            margin-bottom: 1.5rem;
+            color: var(--text-secondary);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1rem;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.2s;
+        }
+
+        .card:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .card-badge {
+            padding: 0.25rem 0.75rem;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .card-badge.active {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+
+        .card-content {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            line-height: 1.6;
+        }
+
+        .card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .meta-tag {
+            padding: 0.25rem 0.5rem;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: var(--accent);
+        }
+
+        .identity-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .identity-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .identity-key {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.25rem;
+        }
+
+        .identity-value {
+            font-size: 1rem;
+            word-break: break-word;
+        }
+
+        .skills-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+
+        .skill-chip {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+        }
+
+        .skill-name {
+            font-size: 0.875rem;
+        }
+
+        .skill-level {
+            display: flex;
+            gap: 2px;
+        }
+
+        .skill-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--border);
+        }
+
+        .skill-dot.filled {
+            background: var(--accent);
+        }
+
+        .timeline {
+            position: relative;
+            padding-left: 2rem;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border);
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-bottom: 2rem;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -2rem;
+            top: 0.5rem;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: 2px solid var(--bg-primary);
+        }
+
+        .timeline-date {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        .timeline-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .timeline-subtitle {
+            color: var(--accent);
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .timeline-content {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state h3 {
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .loading {
+            display: flex;
+            justify-content: center;
+            padding: 4rem;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .search-box {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .search-btn {
+            padding: 0.75rem 1.5rem;
+            background: var(--accent);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .search-btn:hover {
+            background: var(--accent-hover);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+            .hero h1 {
+                font-size: 1.75rem;
+            }
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">Personal<span>-OS</span></div>
+        <div class="status">
+            <div class="status-dot"></div>
+            <span id="status-text">Connecting...</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="hero">
+            <h1 id="hero-name">Loading...</h1>
+            <p id="hero-role"></p>
+        </div>
+
+        <div class="tabs" id="tabs">
+            <div class="tab active" data-tab="identity">Identity</div>
+            <div class="tab" data-tab="skills">Skills</div>
+            <div class="tab" data-tab="education">Education</div>
+            <div class="tab" data-tab="work">Work</div>
+            <div class="tab" data-tab="people">People <span class="tab-count" id="people-count">0</span></div>
+            <div class="tab" data-tab="projects">Projects <span class="tab-count" id="projects-count">0</span></div>
+            <div class="tab" data-tab="search">Search</div>
+        </div>
+
+        <div class="content" id="content">
+            <div class="loading">
+                <div class="spinner"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let data = {};
+
+        async function fetchData() {
+            try {
+                const [identity, skills, education, work, people, projects] = await Promise.all([
+                    fetch(`${API_BASE}/identity`).then(r => r.json()),
+                    fetch(`${API_BASE}/skills`).then(r => r.json()),
+                    fetch(`${API_BASE}/education`).then(r => r.json()),
+                    fetch(`${API_BASE}/work`).then(r => r.json()),
+                    fetch(`${API_BASE}/people`).then(r => r.json()),
+                    fetch(`${API_BASE}/projects`).then(r => r.json())
+                ]);
+
+                data = { identity: identity.identity, skills: skills.skills, education: education.education,
+                         work: work.work_experience, people: people.people, projects: projects.projects };
+
+                document.getElementById('status-text').textContent = 'Connected';
+                document.getElementById('people-count').textContent = data.people.length;
+                document.getElementById('projects-count').textContent = data.projects.length;
+
+                // Set hero
+                const name = data.identity.find(i => i.key === 'full_name')?.value || 'Personal-OS';
+                const role = data.identity.find(i => i.key === 'current_role_1')?.value || '';
+                document.getElementById('hero-name').textContent = name;
+                document.getElementById('hero-role').textContent = role;
+
+                renderTab('identity');
+            } catch (err) {
+                document.getElementById('status-text').textContent = 'Error loading data';
+                document.getElementById('content').innerHTML = `
+                    <div class="empty-state">
+                        <h3>Connection Error</h3>
+                        <p>${err.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderTab(tab) {
+            const content = document.getElementById('content');
+
+            switch(tab) {
+                case 'identity':
+                    content.innerHTML = `
+                        <h2 class="section-title">Identity & Core Information</h2>
+                        <div class="identity-grid">
+                            ${data.identity.map(item => `
+                                <div class="identity-item">
+                                    <div class="identity-key">${item.key.replace(/_/g, ' ')}</div>
+                                    <div class="identity-value">${item.value}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                    break;
+
+                case 'skills':
+                    const categories = [...new Set(data.skills.map(s => s.category))];
+                    content.innerHTML = categories.map(cat => `
+                        <h2 class="section-title">${cat}</h2>
+                        <div class="skills-grid">
+                            ${data.skills.filter(s => s.category === cat).map(skill => `
+                                <div class="skill-chip">
+                                    <span class="skill-name">${skill.name}</span>
+                                    <div class="skill-level">
+                                        ${[1,2,3,4,5].map(i => `
+                                            <div class="skill-dot ${i <= skill.proficiency ? 'filled' : ''}"></div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `).join('<br>');
+                    break;
+
+                case 'education':
+                    content.innerHTML = `
+                        <h2 class="section-title">Education</h2>
+                        <div class="timeline">
+                            ${data.education.map(edu => `
+                                <div class="timeline-item">
+                                    <div class="timeline-date">${edu.start_year} - ${edu.end_year}</div>
+                                    <div class="timeline-title">${edu.institution}</div>
+                                    <div class="timeline-subtitle">${edu.degree} in ${edu.field}</div>
+                                    <div class="timeline-content">${edu.achievements || ''}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                    break;
+
+                case 'work':
+                    content.innerHTML = `
+                        <h2 class="section-title">Work Experience</h2>
+                        <div class="timeline">
+                            ${data.work.map(job => `
+                                <div class="timeline-item">
+                                    <div class="timeline-date">${job.start_date || 'Present'} - ${job.end_date || 'Present'}</div>
+                                    <div class="timeline-title">${job.company}</div>
+                                    <div class="timeline-subtitle">${job.role} ${job.location ? '· ' + job.location : ''}</div>
+                                    <div class="timeline-content">${job.description || ''}</div>
+                                    ${job.achievements ? `<div class="timeline-content" style="margin-top:0.5rem;color:var(--success)">${job.achievements}</div>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                    break;
+
+                case 'people':
+                    if (data.people.length === 0) {
+                        content.innerHTML = `
+                            <div class="empty-state">
+                                <h3>No People Yet</h3>
+                                <p>Add people to your network via the API</p>
+                            </div>
+                        `;
+                    } else {
+                        content.innerHTML = `
+                            <h2 class="section-title">Network (${data.people.length})</h2>
+                            <div class="grid">
+                                ${data.people.map(person => `
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <div class="card-title">${person.name}</div>
+                                            <div class="card-badge">${person.relationship || 'Contact'}</div>
+                                        </div>
+                                        <div class="card-content">
+                                            ${person.organization ? `<strong>${person.organization}</strong><br>` : ''}
+                                            ${person.role || ''}
+                                            ${person.notes ? `<br><br>${person.notes}` : ''}
+                                        </div>
+                                        <div class="card-meta">
+                                            ${person.email ? `<span class="meta-tag">${person.email}</span>` : ''}
+                                            ${person.location ? `<span class="meta-tag">${person.location}</span>` : ''}
+                                            ${person.tags ? person.tags.split(',').map(t => `<span class="meta-tag">${t.trim()}</span>`).join('') : ''}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    }
+                    break;
+
+                case 'projects':
+                    if (data.projects.length === 0) {
+                        content.innerHTML = `
+                            <div class="empty-state">
+                                <h3>No Projects Yet</h3>
+                                <p>Add projects via the API</p>
+                            </div>
+                        `;
+                    } else {
+                        content.innerHTML = `
+                            <h2 class="section-title">Projects (${data.projects.length})</h2>
+                            <div class="grid">
+                                ${data.projects.map(project => `
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <div class="card-title">${project.name}</div>
+                                            <div class="card-badge ${project.status === 'active' ? 'active' : ''}">${project.status}</div>
+                                        </div>
+                                        <div class="card-content">
+                                            ${project.description || ''}
+                                            ${project.tech_stack ? `<br><br><strong>Tech:</strong> ${project.tech_stack}` : ''}
+                                        </div>
+                                        <div class="card-meta">
+                                            ${project.category ? `<span class="meta-tag">${project.category}</span>` : ''}
+                                            ${project.github_url ? `<a href="${project.github_url}" class="meta-tag" target="_blank">GitHub</a>` : ''}
+                                            ${project.tags ? project.tags.split(',').map(t => `<span class="meta-tag">${t.trim()}</span>`).join('') : ''}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    }
+                    break;
+
+                case 'search':
+                    content.innerHTML = `
+                        <h2 class="section-title">Search</h2>
+                        <div class="search-box">
+                            <input type="text" class="search-input" id="search-input" placeholder="Search people, projects, notes...">
+                            <button class="search-btn" onclick="performSearch()">Search</button>
+                        </div>
+                        <div id="search-results"></div>
+                    `;
+                    document.getElementById('search-input').addEventListener('keypress', e => {
+                        if (e.key === 'Enter') performSearch();
+                    });
+                    break;
+            }
+        }
+
+        async function performSearch() {
+            const query = document.getElementById('search-input').value;
+            if (!query) return;
+
+            const results = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`).then(r => r.json());
+            const resultsDiv = document.getElementById('search-results');
+
+            const allResults = [
+                ...results.people.map(r => ({...r, type: 'Person'})),
+                ...results.projects.map(r => ({...r, type: 'Project'})),
+                ...results.notes.map(r => ({...r, type: 'Note'}))
+            ];
+
+            if (allResults.length === 0) {
+                resultsDiv.innerHTML = `<div class="empty-state"><h3>No results found</h3></div>`;
+            } else {
+                resultsDiv.innerHTML = `
+                    <div class="grid">
+                        ${allResults.map(item => `
+                            <div class="card">
+                                <div class="card-header">
+                                    <div class="card-title">${item.name || item.title || 'Untitled'}</div>
+                                    <div class="card-badge">${item.type}</div>
+                                </div>
+                                <div class="card-content">
+                                    ${item.relationship || item.status || item.category || ''}
+                                    ${item.organization ? ` · ${item.organization}` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+        }
+
+        // Tab switching
+        document.getElementById('tabs').addEventListener('click', e => {
+            if (e.target.classList.contains('tab')) {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                e.target.classList.add('active');
+                renderTab(e.target.dataset.tab);
+            }
+        });
+
+        // Initialize
+        fetchData();
+    </script>
+</body>
+</html>

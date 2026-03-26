@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "personal-memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic/mcp-proxy",
+        "https://YOUR-APP-NAME.fly.dev"
+      ],
+      "description": "Universal AI Memory - Your personal memory system"
+    }
+  }
+}
