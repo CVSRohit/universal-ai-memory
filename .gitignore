@@ -4,6 +4,7 @@ about_RC.md
 projects_RC.md
 sync_to_cloud.py
 mcp-config.json
+*.docx
 
 # System files
 .DS_Store
