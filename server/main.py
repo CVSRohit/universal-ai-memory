@@ -225,6 +225,26 @@ def api_info():
         ]
     }
 
+@app.get("/dashboard-data")
+def dashboard_data(_: bool = Depends(verify_api_key)):
+    """Return all data needed for the dashboard"""
+    with get_db() as conn:
+        identity = conn.execute("SELECT key, value, category FROM identity").fetchall()
+        skills = conn.execute("SELECT * FROM skills").fetchall()
+        education = conn.execute("SELECT * FROM education ORDER BY end_year DESC").fetchall()
+        work = conn.execute("SELECT * FROM work_experience ORDER BY end_date DESC NULLS FIRST").fetchall()
+        people = conn.execute("SELECT * FROM people ORDER BY name LIMIT 100").fetchall()
+        projects = conn.execute("SELECT * FROM projects ORDER BY created_at DESC LIMIT 100").fetchall()
+
+        return {
+            "identity": [dict_from_row(r) for r in identity],
+            "skills": [dict_from_row(r) for r in skills],
+            "education": [dict_from_row(r) for r in education],
+            "work_experience": [dict_from_row(r) for r in work],
+            "people": [dict_from_row(r) for r in people],
+            "projects": [dict_from_row(r) for r in projects]
+        }
+
 # ============== IDENTITY (Auth Required) ==============
 
 @app.get("/identity")

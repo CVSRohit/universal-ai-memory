@@ -353,6 +353,93 @@
             to { transform: rotate(360deg); }
         }
 
+        .auth-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .auth-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .auth-box h2 {
+            margin-bottom: 0.5rem;
+        }
+
+        .auth-box p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            font-size: 0.875rem;
+        }
+
+        .auth-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .auth-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .auth-btn {
+            width: 100%;
+            padding: 0.75rem 1.5rem;
+            background: var(--accent);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+
+        .auth-btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .auth-error {
+            color: #ef4444;
+            font-size: 0.875rem;
+            margin-top: 1rem;
+        }
+
+        .logout-btn {
+            padding: 0.5rem 1rem;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.75rem;
+            margin-left: 1rem;
+        }
+
+        .logout-btn:hover {
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+
         .search-box {
             display: flex;
             gap: 1rem;
@@ -407,8 +494,19 @@
         <div class="status">
             <div class="status-dot"></div>
             <span id="status-text">Connecting...</span>
+            <button class="logout-btn" id="logout-btn" style="display:none" onclick="logout()">Logout</button>
         </div>
     </header>
+
+    <div class="auth-modal" id="auth-modal" style="display:none">
+        <div class="auth-box">
+            <h2>Authentication Required</h2>
+            <p>Enter your API key to access the dashboard</p>
+            <input type="password" class="auth-input" id="api-key-input" placeholder="API Key">
+            <button class="auth-btn" onclick="authenticate()">Connect</button>
+            <div class="auth-error" id="auth-error" style="display:none"></div>
+        </div>
+    </div>
 
     <div class="container">
         <div class="hero">
@@ -436,22 +534,80 @@
     <script>
         const API_BASE = window.location.origin;
         let data = {};
+        let apiKey = localStorage.getItem('personal-os-api-key') || '';
+
+        function getHeaders() {
+            const headers = {};
+            if (apiKey) headers['X-API-Key'] = apiKey;
+            return headers;
+        }
+
+        async function checkAuthRequired() {
+            try {
+                const response = await fetch(`${API_BASE}/api`);
+                const info = await response.json();
+                return info.auth_required;
+            } catch {
+                return true;
+            }
+        }
+
+        async function authenticate() {
+            const input = document.getElementById('api-key-input');
+            const error = document.getElementById('auth-error');
+            apiKey = input.value.trim();
+
+            try {
+                const response = await fetch(`${API_BASE}/dashboard-data`, {
+                    headers: { 'X-API-Key': apiKey }
+                });
+
+                if (response.ok) {
+                    localStorage.setItem('personal-os-api-key', apiKey);
+                    document.getElementById('auth-modal').style.display = 'none';
+                    document.getElementById('logout-btn').style.display = 'inline-block';
+                    fetchData();
+                } else {
+                    error.textContent = 'Invalid API key';
+                    error.style.display = 'block';
+                }
+            } catch (err) {
+                error.textContent = 'Connection failed';
+                error.style.display = 'block';
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('personal-os-api-key');
+            apiKey = '';
+            location.reload();
+        }
 
         async function fetchData() {
             try {
-                const [identity, skills, education, work, people, projects] = await Promise.all([
-                    fetch(`${API_BASE}/identity`).then(r => r.json()),
-                    fetch(`${API_BASE}/skills`).then(r => r.json()),
-                    fetch(`${API_BASE}/education`).then(r => r.json()),
-                    fetch(`${API_BASE}/work`).then(r => r.json()),
-                    fetch(`${API_BASE}/people`).then(r => r.json()),
-                    fetch(`${API_BASE}/projects`).then(r => r.json())
-                ]);
+                const response = await fetch(`${API_BASE}/dashboard-data`, { headers: getHeaders() });
 
-                data = { identity: identity.identity, skills: skills.skills, education: education.education,
-                         work: work.work_experience, people: people.people, projects: projects.projects };
+                if (response.status === 401) {
+                    // Auth required - show login
+                    document.getElementById('auth-modal').style.display = 'flex';
+                    document.getElementById('status-text').textContent = 'Authentication required';
+                    return;
+                }
+
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const result = await response.json();
+
+                data = {
+                    identity: result.identity || [],
+                    skills: result.skills || [],
+                    education: result.education || [],
+                    work: result.work_experience || [],
+                    people: result.people || [],
+                    projects: result.projects || []
+                };
 
                 document.getElementById('status-text').textContent = 'Connected';
+                document.getElementById('logout-btn').style.display = apiKey ? 'inline-block' : 'none';
                 document.getElementById('people-count').textContent = data.people.length;
                 document.getElementById('projects-count').textContent = data.projects.length;
 
@@ -472,6 +628,13 @@
                 `;
             }
         }
+
+        // Allow Enter key to submit
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('api-key-input').addEventListener('keypress', e => {
+                if (e.key === 'Enter') authenticate();
+            });
+        });
 
         function renderTab(tab) {
             const content = document.getElementById('content');
@@ -632,7 +795,7 @@
             const query = document.getElementById('search-input').value;
             if (!query) return;
 
-            const results = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`).then(r => r.json());
+            const results = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`, { headers: getHeaders() }).then(r => r.json());
             const resultsDiv = document.getElementById('search-results');
 
             const allResults = [

@@ -109,11 +109,20 @@ flyctl deploy
 
 Your memory is now live at `https://your-app-name.fly.dev`!
 
-### Step 7: Initialize Your Identity
+### Step 7: Set Up Authentication (Optional but Recommended)
+
+```bash
+# Generate and set an API key
+openssl rand -hex 32
+flyctl secrets set API_KEY=your-generated-key
+```
+
+### Step 8: Initialize Your Identity
 
 ```bash
 curl -X POST https://your-app-name.fly.dev/seed \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
   -d '{
     "identity": [
       {"key": "name", "value": "Your Name", "category": "basic"},
@@ -123,7 +132,7 @@ curl -X POST https://your-app-name.fly.dev/seed \
   }'
 ```
 
-### Step 8: Connect Your AI Tools
+### Step 9: Connect Your AI Tools
 
 #### Claude Desktop (MCP)
 Add to `~/.claude/claude_desktop_config.json`:
@@ -157,12 +166,14 @@ Just make HTTP requests to your API:
 ```python
 import requests
 
+headers = {"X-API-Key": "your-api-key"}
+
 # Read
-response = requests.get("https://your-app-name.fly.dev/identity")
+response = requests.get("https://your-app-name.fly.dev/identity", headers=headers)
 user_info = response.json()
 
 # Write
-requests.post("https://your-app-name.fly.dev/people", json={
+requests.post("https://your-app-name.fly.dev/people", headers=headers, json={
     "name": "John Doe",
     "relationship": "colleague",
     "notes": "Met at conference"
@@ -313,19 +324,44 @@ With Fly.io's generous free tier and scale-to-zero:
 
 ---
 
-## Security Considerations
+## Security
 
-This is designed for **personal use**. The API is open by default. For production:
+The API includes built-in security features:
 
-1. Add authentication (API keys, JWT, etc.)
-2. Use Fly.io private networking
-3. Enable HTTPS only (already default on Fly)
+### API Key Authentication
+Enable authentication by setting the `API_KEY` secret:
+
+```bash
+# Generate a secure key
+openssl rand -hex 32
+
+# Set it on Fly.io
+flyctl secrets set API_KEY=your-generated-key
+```
+
+Once set, all protected endpoints require the `X-API-Key` header:
+```bash
+curl -H "X-API-Key: your-key" https://your-app-name.fly.dev/identity
+```
+
+Public endpoints (no auth required): `/`, `/health`, `/api`, `/dashboard`
+
+### Built-in Protections
+- **Destructive SQL blocked**: DROP TABLE, TRUNCATE, ALTER TABLE DROP
+- **File size limits**: 50MB max upload
+- **Input validation**: Length limits on all fields
+- **Non-root container**: App runs as unprivileged user
+- **HTTPS only**: Enforced by Fly.io
+
+### Additional Options
+- Configure CORS: `flyctl secrets set ALLOWED_ORIGINS=https://yourdomain.com`
+- Use Fly.io private networking for internal services
 
 ---
 
 ## Roadmap
 
-- [ ] Authentication layer
+- [x] Authentication layer
 - [ ] Encryption at rest
 - [ ] Webhook support for real-time sync
 - [ ] Vector embeddings for semantic search
